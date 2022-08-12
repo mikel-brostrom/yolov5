@@ -11,7 +11,7 @@ from strong_sort.sort.detection import Detection
 from strong_sort.sort.tracker import Tracker
 from strong_sort.deep.reid_model_factory import show_downloadeable_models, get_model_url, get_model_name
 
-from strong_sort.deep.feature_extractor_copy import FeatureExtractor
+from strong_sort.deep.feature_extractor import FeatureExtractor
 from strong_sort.deep.torchtools import download_url
 from strong_sort.reid_multibackend import ReIDDetectMultiBackend
 

@@ -8,7 +8,7 @@ import gdown
 from os.path import exists as file_exists
 from .deep.reid_model_factory import show_downloadeable_models, get_model_url, get_model_name
 
-from .deep.feature_extractor_copy import FeatureExtractor
+from .deep.feature_extractor import FeatureExtractor
 from .deep.torchtools import download_url
 
 
