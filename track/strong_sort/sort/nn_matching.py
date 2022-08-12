@@ -2,7 +2,7 @@
 import numpy as np
 import sys
 import torch
-from ..deep.deep_person_reid.torchreid.metrics.distance import compute_distance_matrix
+from .distance import compute_distance_matrix
 
 
 def _pdist(a, b):
