@@ -25,8 +25,10 @@ if str(ROOT / 'strong_sort') not in sys.path:
     sys.path.append(str(ROOT / 'strong_sort'))  # add strong_sort ROOT to PATH
 ROOT = Path(os.path.relpath(ROOT, Path.cwd()))  # relative
 
-from utils.general import LOGGER, check_requirements, print_args
+from utils.general import LOGGER, check_requirements, print_args, xyxy2xywh
 from utils.torch_utils import select_device
+from strong_sort.utils.parser import get_config
+from strong_sort.strong_sort import StrongSORT
 
 
 class TrackThread(threading.Thread):
@@ -121,7 +123,10 @@ def parse_opt():
     parser.add_argument('--detect_project', default=ROOT / 'runs/detect', help='save results to project/name')
     parser.add_argument('--track_project', default=ROOT / 'runs/track', help='save results to project/name')
     parser.add_argument('--name', default='exp2', help='save results to project/name')
+    parser.add_argument('--half', action='store_true', help='use FP16 half-precision inference')
     parser.add_argument('--exist-ok', action='store_true', help='existing project/name ok, do not increment')
+    parser.add_argument('--device', default='', help='cuda device, i.e. 0 or 0,1,2,3 or cpu')
+
     opt = parser.parse_args()
     print_args(vars(opt))
     return opt
@@ -153,6 +158,21 @@ def main(opt):
     #     thread.join()
 
     # get all paths to seq txts
+    cfg = get_config()
+    cfg.merge_from_file(opt.config_strongsort)
+    # StrongSORT(
+    #     opt.strong_sort_weights,
+    #     opt.device,
+    #     opt.half,
+    #     max_dist=cfg.STRONGSORT.MAX_DIST,
+    #     max_iou_distance=cfg.STRONGSORT.MAX_IOU_DISTANCE,
+    #     max_age=cfg.STRONGSORT.MAX_AGE,
+    #     n_init=cfg.STRONGSORT.N_INIT,
+    #     nn_budget=cfg.STRONGSORT.NN_BUDGET,
+    #     mc_lambda=cfg.STRONGSORT.MC_LAMBDA,
+    #     ema_alpha=cfg.STRONGSORT.EMA_ALPHA,
+
+    # )
     seq_bboxes_folder = [p / 'labels' for p in Path(opt.detect_project).iterdir() if p.is_dir()]
     for folder in seq_bboxes_folder:
         txts = folder.glob('*.txt')
@@ -164,7 +184,12 @@ def main(opt):
                 for line in f:
                     rows.append(line.split())
             rows = np.array(rows, dtype=float)
-            print(rows)
+            xywhs = xyxy2xywh(rows[:, 1:5])
+            confs = rows[:, 5]
+            clss = rows[:, 0]
+            print(xywhs)
+            print(confs)
+            print(clss)
                 
 
 
