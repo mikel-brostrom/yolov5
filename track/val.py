@@ -10,6 +10,9 @@ import zipfile
 from pathlib import Path
 import logging
 import shutil
+import threading
+import signal
+import ctypes
 
 
 
@@ -23,16 +26,43 @@ if str(ROOT / 'strong_sort') not in sys.path:
     sys.path.append(str(ROOT / 'strong_sort'))  # add strong_sort ROOT to PATH
 ROOT = Path(os.path.relpath(ROOT, Path.cwd()))  # relative
 
-
-##from models.common import DetectMultiBackend
 from utils.general import LOGGER, check_requirements, print_args
-#from utils.loggers import Loggers
 from track import run
 
 
+class SeqThread(threading.Thread):
+    def __init__(self, seq_path, exp_results_folder, MOT_txt_destination_folder, seq_result):
+        super(SeqThread, self).__init__()
+        self.seq_path = seq_path
+        self.exp_results_folder = exp_results_folder
+        self._stopper = threading.Event()
+        self.MOT_txt_destination_folder = MOT_txt_destination_folder
+        self.seq_result = seq_result
+        self._stopper = threading.Event()
+
+    def run(self):
+        # change img1 folder name to MOTx
+        if self.seq_path.is_file():
+            shutil.move(str(self.seq_path), str(self.seq_path.parent / self.seq_path.parent.name))
+        # target function of the thread class
+        try: 
+            run(
+                source=str(self.seq_path.parent / self.seq_path.parent.name),
+                yolo_weights=WEIGHTS / 'yolov5m.pt',
+                strong_sort_weights=WEIGHTS / 'osnet_x1_0_msmt17.pt',
+                classes=0,
+                name=self.exp_results_folder,
+                imgsz=(320, 320),
+                exist_ok=True,
+                save_txt=True
+            )
+        finally:
+            print('ended')
+        
+        shutil.move(self.seq_result, self.MOT_txt_destination_folder)
+
+
 def prepare_evaluation_files(dst_val_tools_folder):
-    
-    
     (dst_val_tools_folder / '/datadrive/mikel/Yolov5_DeepSort_OSNet/MOT16_eval/TrackEval/data/trackers/mot_challenge/MOT16-train')
     # source: https://github.com/JonathonLuiten/TrackEval#official-evaluation-code
     LOGGER.info('Download official MOT evaluation repo')
@@ -48,7 +78,7 @@ def prepare_evaluation_files(dst_val_tools_folder):
     with zipfile.ZipFile(dst_val_tools_folder / 'data.zip', 'r') as zip_ref:
         zip_ref.extractall(dst_val_tools_folder)
 
-    LOGGER.info('Download official MOT images and associated txts')
+    LOGGER.info('Download official MOT images')
     mot_gt_data_url = 'https://motchallenge.net/data/MOT16.zip'
     subprocess.run(["wget", "-nc", mot_gt_data_url, "-O", dst_val_tools_folder / 'MOT16.zip']) # python module has no -nc nor -N flag
     with zipfile.ZipFile(dst_val_tools_folder / 'MOT16.zip', 'r') as zip_ref:
@@ -76,21 +106,17 @@ def main(opt):
     MOT_results_folder = dst_val_tools_folder/ 'data' / 'trackers' / 'mot_challenge' / 'MOT16-train' / exp_results_folder.stem / 'data'
     (MOT_results_folder).mkdir(parents=True, exist_ok=True)  # make
     
+    threads = []
     for seq_path in seq_paths:
         LOGGER.info(f'Staring eval on sequence: ', seq_path)
         seq_result = exp_results_folder / seq_path.name
         MOT_txt_destination_folder = MOT_results_folder / seq_path.name
-        # run(
-        #     source=seq_path,
-        #     yolo_weights=WEIGHTS / 'yolov5m.pt',
-        #     strong_sort_weights=WEIGHTS / 'osnet_x1_0_msmt17.pt',
-        #     classes=0,
-        #     name=exp_results_folder,
-        #     imgsz=(1280, 1280),
-        #     exist_ok=False,
-        #     save_txt=True
-        # )
-        # shutil.move(seq_result, MOT_txt_destination_folder)
+        seq_path
+        seq_thread = SeqThread(seq_path, exp_results_folder, MOT_txt_destination_folder, seq_result)
+        seq_thread.start()
+        print(threading.enumerate())
+    for seq_thread in threads:
+        seq_thread.join()
         
     # run the evaluation on the generated txts
     subprocess.run([
@@ -103,7 +129,6 @@ def main(opt):
         "--NUM_PARALLEL_CORES", "4"
     ]) # python module has no -nc nor -N flag
     
-
 
 if __name__ == "__main__":
     opt = parse_opt()
