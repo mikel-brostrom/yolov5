@@ -8,11 +8,8 @@ import git
 from git import Repo
 import zipfile
 from pathlib import Path
-import logging
 import shutil
 import threading
-import signal
-import ctypes
 
 
 FILE = Path(__file__).resolve()
