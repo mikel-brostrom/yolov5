@@ -15,7 +15,6 @@ import signal
 import ctypes
 
 
-
 FILE = Path(__file__).resolve()
 ROOT = FILE.parents[0].parents[0]  # yolov5 strongsort root directory
 WEIGHTS = ROOT / 'weights'
@@ -26,44 +25,48 @@ if str(ROOT / 'strong_sort') not in sys.path:
     sys.path.append(str(ROOT / 'strong_sort'))  # add strong_sort ROOT to PATH
 ROOT = Path(os.path.relpath(ROOT, Path.cwd()))  # relative
 
-from utils.general import LOGGER, check_requirements, print_args
+from utils.general import LOGGER, check_requirements, print_args, increment_path
 from track import run
 
 
 class SeqThread(threading.Thread):
-    def __init__(self, seq_path, exp_results_folder, MOT_txt_destination_folder, seq_result):
+    def __init__(self, seq_path, exp_results_folder, MOT_results_folder):
         super(SeqThread, self).__init__()
+        
         self.seq_path = seq_path
         self.exp_results_folder = exp_results_folder
-        self._stopper = threading.Event()
-        self.MOT_txt_destination_folder = MOT_txt_destination_folder
-        self.seq_result = seq_result
-        self._stopper = threading.Event()
+        self.MOT_results_folder = MOT_results_folder
+        self.MOT_results_path = MOT_results_folder / Path(self.seq_path.parent.name + '.txt')
+        self.source = self.seq_path.parent / self.seq_path.parent.name
 
     def run(self):
-        # change img1 folder name to MOTx
-        if self.seq_path.is_file():
-            shutil.move(str(self.seq_path), str(self.seq_path.parent / self.seq_path.parent.name))
-        # target function of the thread class
+        # change img1 folder name to MOTXX-YY
+        if not self.source.is_dir():
+            shutil.move(str(self.seq_path), self.source)
+
         try: 
             run(
-                source=str(self.seq_path.parent / self.seq_path.parent.name),
+                source=self.source,
                 yolo_weights=WEIGHTS / 'yolov5m.pt',
                 strong_sort_weights=WEIGHTS / 'osnet_x1_0_msmt17.pt',
+                project=self.exp_results_folder.parent,
+                name=self.exp_results_folder.name,
                 classes=0,
-                name=self.exp_results_folder,
                 imgsz=(320, 320),
                 exist_ok=True,
                 save_txt=True
             )
-        finally:
-            print('ended')
-        
-        shutil.move(self.seq_result, self.MOT_txt_destination_folder)
+        except Exception as e:
+            print(e)
+
+        # copy from yolov5 exp folder to eval tracking folder
+        src = self.exp_results_folder / 'tracks' / Path(self.seq_path.parent.name + '.txt')
+        dst = self.MOT_results_folder / Path(self.seq_path.parent.name + '.txt')
+        shutil.copyfile(src, dst)
 
 
-def prepare_evaluation_files(dst_val_tools_folder):
-    (dst_val_tools_folder / '/datadrive/mikel/Yolov5_DeepSort_OSNet/MOT16_eval/TrackEval/data/trackers/mot_challenge/MOT16-train')
+def setup_evaluation(dst_val_tools_folder):
+    
     # source: https://github.com/JonathonLuiten/TrackEval#official-evaluation-code
     LOGGER.info('Download official MOT evaluation repo')
     val_tools_url = "https://github.com/JonathonLuiten/TrackEval"
@@ -90,6 +93,13 @@ def parse_opt():
     parser.add_argument('--yolo-weights', nargs='+', type=str, default=WEIGHTS / 'yolov5n.pt', help='model.pt path(s)')
     parser.add_argument('--strong-sort-weights', type=str, default=WEIGHTS / 'mobilenetv2_x1_0_msmt17.pt')
     parser.add_argument('--config-strongsort', type=str, default='track/strong_sort/configs/strong_sort.yaml')
+    parser.add_argument('--name', default='exp', help='save results to project/name')
+    parser.add_argument('--project', default=ROOT / 'runs/track', help='save results to project/name')
+    parser.add_argument('--exist-ok', action='store_true', help='existing project/name ok, do not increment')
+    parser.add_argument('--benchmark', type=str,  default='MOT16', help='MOT16, MOT17, MOT20')
+    parser.add_argument('--split', type=str,  default='train', help='existing project/name ok, do not increment')
+    parser.add_argument('--eval-existing', type=str, default='', help='evaluate existing tracker results under mot_callenge/MOTXX-YY/...')
+
     opt = parser.parse_args()
     print_args(vars(opt))
     return opt
@@ -97,37 +107,38 @@ def parse_opt():
 
 def main(opt):
     check_requirements(requirements=ROOT / 'requirements.txt', exclude=('tensorboard', 'thop'))
-    dst_val_tools_folder = ROOT / 'track' / 'val_utils'
-    #prepare_evaluation_files(dst_val_tools_folder)
-    mot_seqs_path = dst_val_tools_folder / 'data' / 'MOT16'/ 'train'
-    print(mot_seqs_path)
+    
+    # download eval files
+    dst_val_tools_folder = ROOT / 'track/val_utils'
+    setup_evaluation(dst_val_tools_folder)
+    
+    # set paths
+    mot_seqs_path = dst_val_tools_folder / 'data' / opt.benchmark / opt.split
     seq_paths = [p / 'img1' for p in Path(mot_seqs_path).iterdir() if p.is_dir()]
-    exp_results_folder = ROOT / 'runs/track/MOT16_results'
-    MOT_results_folder = dst_val_tools_folder/ 'data' / 'trackers' / 'mot_challenge' / 'MOT16-train' / exp_results_folder.stem / 'data'
+    save_dir = increment_path(Path(opt.project) / opt.name, exist_ok=opt.exist_ok)  # increment run
+    MOT_results_folder = dst_val_tools_folder / 'data' / 'trackers' / 'mot_challenge' / Path(str(opt.benchmark) + '-' + str(opt.split)) / save_dir.name / 'data'
     (MOT_results_folder).mkdir(parents=True, exist_ok=True)  # make
     
-    threads = []
-    for seq_path in seq_paths:
-        LOGGER.info(f'Staring eval on sequence: ', seq_path)
-        seq_result = exp_results_folder / seq_path.name
-        MOT_txt_destination_folder = MOT_results_folder / seq_path.name
-        seq_path
-        seq_thread = SeqThread(seq_path, exp_results_folder, MOT_txt_destination_folder, seq_result)
-        seq_thread.start()
-        print(threading.enumerate())
-    for seq_thread in threads:
-        seq_thread.join()
+    if not opt.eval_existing:
+        threads = []
+        for seq_path in seq_paths:
+            LOGGER.info(f'Staring eval on sequence: ', seq_path)
+            seq_thread = SeqThread(seq_path, save_dir, MOT_results_folder)
+            seq_thread.start()
+            threads.append(seq_thread)
+        for seq_thread in threads:
+            seq_thread.join()
         
     # run the evaluation on the generated txts
     subprocess.run([
-        "python",  "track/val_utils/scripts/run_mot_challenge.py",\
+        "python",  dst_val_tools_folder / "scripts/run_mot_challenge.py",\
         "--BENCHMARK", "MOT16",\
-        "--TRACKERS_TO_EVAL", exp_results_folder.stem,\
+        "--TRACKERS_TO_EVAL",  opt.eval_existing if opt.eval_existing else MOT_results_folder.parent.name,\
         "--SPLIT_TO_EVAL", "train",\
         "--METRICS", "HOTA", "CLEAR", "Identity",\
         "--USE_PARALLEL", "True",\
-        "--NUM_PARALLEL_CORES", "4"
-    ]) # python module has no -nc nor -N flag
+        "--NUM_PARALLEL_CORES", "4"\
+    ])
     
 
 if __name__ == "__main__":
