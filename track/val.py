@@ -71,7 +71,7 @@ def main(opt):
     
     # download eval files
     dst_val_tools_folder = ROOT / 'val_utils'
-    #setup_evaluation(dst_val_tools_folder)
+    setup_evaluation(dst_val_tools_folder)
     
     # set paths
     mot_seqs_path = dst_val_tools_folder / 'data' / opt.benchmark / opt.split
@@ -96,7 +96,7 @@ def main(opt):
                 shutil.move(str(src_seq_path), str(dst_seq_path))
 
             p = subprocess.Popen([
-                "python", "track.py",\
+                "python", "track/track.py",\
                 "--yolo-weights", "yolov5n.pt",\
                 "--strong-sort-weights",  "mobilenetv2_x1_0_msmt17.pt",\
                 "--name", save_dir.name,\
@@ -115,7 +115,7 @@ def main(opt):
     for src in results:
         if opt.eval_existing:
             dst = MOT_results_folder.parent.parent / opt.eval_existing / 'data' / Path(src.stem + '.txt')
-        else  
+        else:  
             dst = MOT_results_folder / Path(src.stem + '.txt')
         dst.parent.mkdir(parents=True, exist_ok=True)  # make
         shutil.copyfile(src, dst)
